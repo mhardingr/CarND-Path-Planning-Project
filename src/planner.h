@@ -8,6 +8,7 @@
 #define MPS_TO_MPH 2.237
 #define LANE_WIDTH 4
 #define LANE_CENTER_D(lane) (lane*1.5*LANE_WIDTH)
+#define D_TO_LANE(d) (d / int(LANE_WIDTH))
 
 
 using nlohmann::json;
@@ -33,19 +34,28 @@ struct CarData {
 
 class Planner {
     public :
-        int TRAJ_POINTS = 50;
-        double REF_VEL = 49.5; // m/s
+        int TRAJ_POINTS         = 50;
+        double MAX_VEL_MS       = 49.5 / MPS_TO_MPH; // m/s
+        double SAFE_ACC_INC     = 9.5;  // m/s2
+        double SAFE_DISTANCE_M  = 30.0; // m
         Planner(vector<vector<double>> map_waypoints_info);
         ~Planner() {}
 
         vector<vector<double>> get_next_pos_vals(CarData &cd);
     private:
+        vector<vector<double>> get_spline_points(CarData &cd, vector<vector<double>> ref_vec);
+        void avoid_traffic(CarData &cd, vector<double>ref_pos);
+        vector<vector<double>> get_ref_vec(CarData &cd);
+
         vector<double> map_waypoints_x;
         vector<double> map_waypoints_y;
         vector<double> map_waypoints_s;
         vector<double> map_waypoints_dx;
         vector<double> map_waypoints_dy;
         int curr_lane;
+        double curr_vel_ms;
+        int tgt_lane;
+        double tgt_vel_ms;
 };
 #endif  // PLANNER_H
 
