@@ -1,9 +1,10 @@
 #include <cmath>  // trig function
 #include <algorithm> // min/max
 #include <iostream>
+#include <set>
 #include "helpers.h"  // getXY
 #include "spline.h"
-#include "planner.h"
+#include "planner.hpp"
 using nlohmann::json;
 using std::min;
 using std::max;
@@ -12,16 +13,147 @@ using std::endl;
 
 #define EPSILON 1e-5
 
+CarLane::CarLane(double _ego_end_path_s, double _lane_d) : ego_end_path_s(_ego_end_path_s), lane_d(_lane_d) {}
+
+void CarLane::add_car_to_lane(double next_car_s, double next_car_speed) {
+    // Next car_s is the car's predicted s-value at end of trajectory
+    lane_cars.insert( LaneCar{next_car_s, lane_d, next_car_speed} );
+}
+
+bool CarLane::has_nearest_lead_car() {
+    // Returns whether there exists a car in this lane just ahead or alongside ego-car (in s-coordinates)
+    auto lane_next_car = lane_cars.equal_range( LaneCar{ ego_end_path_s, lane_d, -1.0} );
+    return lane_next_car.first != lane_cars.end();
+}
+
+LaneCar CarLane::get_nearest_lead_car() {
+    // Returns the first car ahead or right next to ego car
+    auto lane_next_car = lane_cars.equal_range( LaneCar{ ego_end_path_s, lane_d, -1.0} );
+    return *lane_next_car.first;
+}
+
+bool CarLane::has_nearest_follow_car() {
+    // Returns whether there exists a car in this lane just behind (in s-coordinates)
+    auto lane_next_car = lane_cars.equal_range( LaneCar{ ego_end_path_s, lane_d, -1.0} );
+    return lane_next_car.first != lane_cars.begin();
+}
+
+LaneCar CarLane::get_nearest_follow_car() {
+    // Returns the first car behind ego car
+    auto lane_next_car = lane_cars.equal_range( LaneCar{ ego_end_path_s, lane_d, -1.0} );
+    return *(--lane_next_car.first);
+}
+
+bool CarLane::canMerge() {
+
+    if (D_TO_LANE(lane_d) < LEFTMOST_LANE || D_TO_LANE(lane_d) > RIGHTMOST_LANE) {
+        return false;
+    }
+
+    bool has_lead = has_nearest_lead_car();
+    bool has_follow = has_nearest_follow_car();
+    if (has_lead && !has_follow) {
+        cout << "(canMerge) Lane (" << D_TO_LANE(lane_d) << " has only lead car." << endl;
+        double lead_s = get_nearest_lead_car().curr_s;
+        if (CAR_S_TO_REAR(lead_s) - CAR_S_TO_FRONT(ego_end_path_s) > LANE_CHANGE_MERGE_BUFFER_M) {
+            cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
+            return true;
+        }
+    } else if (has_lead && has_follow) {
+        // Gap exists to left, is it fast enough and large enough?
+        cout << "(canMerge) Lane (" << D_TO_LANE(lane_d) << " has lead and follow." << endl;
+        LaneCar lead    = get_nearest_lead_car();
+        LaneCar follow  = get_nearest_follow_car();
+        if (CarLane::isValidGap(lead, follow)) {
+            cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
+            return true;
+        }
+    } else if (!has_lead && has_follow) {
+        cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has only follow." << endl;
+        double follow_s = get_nearest_follow_car().curr_s;
+        if (CAR_S_TO_FRONT(follow_s) - CAR_S_TO_REAR(ego_end_path_s) > LANE_CHANGE_MERGE_BUFFER_M) {
+            cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
+            return true;
+        }
+    } else {
+        // No cars!
+        cout << "(canMerge) Lane (" << D_TO_LANE(lane_d) << " is empty!" << endl;
+        cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
+        return true;
+    }
+    return false;
+
+}
+
+bool CarLane::canMergeFasterThan(double thresh_speed_ms) {
+    if (D_TO_LANE(lane_d) < LEFTMOST_LANE || D_TO_LANE(lane_d) > RIGHTMOST_LANE) {
+        return false;
+    }
+    // Check left lane first if gap is moving faster than car ahead
+    bool has_lead = has_nearest_lead_car();
+    bool has_follow = has_nearest_follow_car();
+    if (has_lead && !has_follow) {
+        if (get_nearest_lead_car().speed_ms > thresh_speed_ms) {
+            // only lead-car, and it's moving faster than car_ahead
+            cout << "Lane (" << D_TO_LANE(lane_d) << " has no gap, but fast enough lead car." << endl;
+            return true;
+        }
+    } else if (has_lead && has_follow) {
+        // Gap exists to left, is it fast enough and large enough?
+        LaneCar lead    = get_nearest_lead_car();
+        LaneCar follow  = get_nearest_follow_car();
+        if (CarLane::isValidGap(lead, follow) &&
+                CarLane::isFasterThan(lead, follow, thresh_speed_ms)) {
+            cout << "Lane (" << D_TO_LANE(lane_d) << " has valid gap that's fast enough." << endl;
+            return true;
+        }
+    } else if (!has_lead && has_follow) {
+        LaneCar follow = get_nearest_follow_car();
+        if (follow.speed_ms > thresh_speed_ms) {
+            cout << "Lane (" << D_TO_LANE(lane_d) << " has only follow that's fast enough." << endl;
+            return true;
+        }
+    } else {
+        // No cars!
+        cout << "Lane (" << D_TO_LANE(lane_d) << " is empty!\n\t->PREP_CL" << endl;
+        return true;
+    }
+    return false;
+}
+
+double CarLane::getMergeSpeed() {
+    double merge_speed_ms;
+
+    bool has_lead = has_nearest_lead_car();
+    bool has_follow = has_nearest_follow_car();
+    if (has_lead && !has_follow) {
+        return get_nearest_lead_car().speed_ms;
+    } else if (has_lead && has_follow) {
+        // Gap exists, return average speed (i.e speed of midpoint)
+        LaneCar lead    = get_nearest_lead_car();
+        LaneCar follow  = get_nearest_follow_car();
+        return (lead.speed_ms + follow.speed_ms) / 2.0;
+    } else if (!has_lead && has_follow) {
+        LaneCar follow = get_nearest_follow_car();
+        return follow.speed_ms;
+    } else {
+        // No cars!
+        return Planner::MAX_VEL_MS;
+    }
+}
+
+
 Planner::Planner(vector<vector<double>> map_waypoints_info) {
     map_waypoints_x     = map_waypoints_info[0];
     map_waypoints_y     = map_waypoints_info[1];
     map_waypoints_s     = map_waypoints_info[2];
     map_waypoints_dx    = map_waypoints_info[3];
     map_waypoints_dy    = map_waypoints_info[4];
-    curr_lane           = 1;
+    curr_lane           = RIGHTMOST_LANE;
     curr_vel_ms         = 0.0;
     tgt_lane            = curr_lane;
     tgt_vel_ms          = MAX_VEL_MS;
+    plan_state          = KEEP_LANE;
 }
 
 vector<vector<double>> Planner::get_spline_points(CarData &cd, vector<vector<double>> ref_vec) {
@@ -110,6 +242,14 @@ vector<vector<double>> Planner::get_ref_vec(CarData &cd) {
     return {prev_ref_pos, ref_pos};
 }
 
+bool Planner::_is_safe_to_change_lanes(CarLane &tgt_lane) {
+    // Does desired new lane have a gap large enough to turn into?
+    if (!tgt_lane.canMerge()) {
+        return false;
+    }
+    return true;
+}
+
 void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
     // Looks ahead in time and within lane to determine if collision is impending
     // Tunes tgt_vel and tgt_lane to avoid traffic
@@ -121,8 +261,17 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
     int prev_size = cd.previous_path_x.size();
 
     // Loop over all detected cars
-    vector<vector<double>> sensor_fusion = cd.sensor_fusion;
-    bool car_ahead = false;
+    // Determine if there is a car ahead
+    // Also find all viable gaps to fit into in left and right lanes
+    vector<vector<double>> sensor_fusion= cd.sensor_fusion;
+    int ego_lane_i  = D_TO_LANE(cd.car_d);
+    double left_lane_d = LANE_CENTER_D(ego_lane_i - 1);// TODO
+    double right_lane_d = LANE_CENTER_D(ego_lane_i + 1);
+//    cout << "ego_lane_i:" << ego_lane_i << endl;
+//    cout << "ego_lane_d " << cd.car_d << "\tleft_d:"<<left_lane_d << "\tright_d:"<<right_lane_d <<endl;
+    CarLane left_lane {cd.end_path_s, left_lane_d};
+    CarLane ego_lane  {cd.end_path_s, LANE_CENTER_D(ego_lane_i)};
+    CarLane right_lane{cd.end_path_s, right_lane_d};
     for (int i=0; i<sensor_fusion.size(); i++) {
         double det_car_vx           = sensor_fusion[i][3];
         double det_car_vy           = sensor_fusion[i][4];
@@ -136,22 +285,101 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
         // Determine if any cars in same lane ahead within the radius
         int det_car_lane    = D_TO_LANE(det_car_d);
         int car_lane        = D_TO_LANE(cd.car_d);
-        if (det_car_lane == car_lane && det_car_s > cd.car_s) {
-            if (pred_s - cd.end_path_s < SAFE_DISTANCE_M) {
-                // Need to slow down to match vel of car AHEAD
-                // and potentially try to change lanes
-                car_ahead = true;
-                cout << "Car ahead! Need to match speed: " << det_car_speed << endl;
-                tgt_vel_ms = det_car_speed;
-            }
+        if (det_car_lane == car_lane) {
+            // Add car to ego lane
+            ego_lane.add_car_to_lane(pred_s, det_car_speed);
+        } else if (det_car_lane >= LEFTMOST_LANE && det_car_lane > car_lane) {//TODO:
+            // Other car is to our left in our way of traffic
+            // update left lane gap
+            left_lane.add_car_to_lane(pred_s, det_car_speed);
+
+        } else if (det_car_lane <= RIGHTMOST_LANE && det_car_lane < car_lane) {//TODO
+            // Other car is to our right in our way of traffic
+            right_lane.add_car_to_lane(pred_s, det_car_speed);
         }
     }
-    if (!car_ahead) {
-        // No cars ahead, can accelerate if not at MAX_VEL_MS
-        cout << "No cars ahead..." << endl;
-        if (tgt_vel_ms < MAX_VEL_MS) {
-            tgt_vel_ms = MAX_VEL_MS;
-        }
+
+    // Get car ahead
+    bool car_ahead_exists = false;
+    LaneCar car_ahead;
+    if (ego_lane.has_nearest_lead_car()) {
+        car_ahead_exists = true;
+        car_ahead = ego_lane.get_nearest_lead_car();
+//        cout << "Car ahead! s:" << car_ahead.curr_s << " | our s:" << cd.end_path_s << endl;
+    }
+
+    // Examine options for all possible successor states
+    switch (plan_state) {
+        case KEEP_LANE:  // Next states: KL, PREP_CL, or PREP_CR
+            tgt_lane    = curr_lane;
+            if (car_ahead_exists) {
+                // Need to at least match lead car's speed
+                if ((car_ahead.curr_s - cd.car_s < SAFE_DISTANCE_M)
+                   && car_ahead.speed_ms < MAX_VEL_MS) {
+                    // We want to switch lanes if there's a car ahead (within some threshold)
+                    tgt_vel_ms  = car_ahead.speed_ms;
+                    if (tgt_lane != LEFTMOST_LANE && left_lane.canMergeFasterThan(car_ahead.speed_ms)) {
+                        cout << "Can change into left lane ("<< ego_lane_i-1 << ") -> PREP_CL" << endl;
+                        plan_state = PREP_CL;
+                    } else if (tgt_lane != RIGHTMOST_LANE && right_lane.canMergeFasterThan(car_ahead.speed_ms)) {
+                        cout << "Can change into right lane ("<< ego_lane_i+1 << ") -> PREP_CR" << endl;
+                        plan_state = PREP_CR;
+                    } else {
+                        // Can't switch lanes because gaps aren't going to get us around car ahead. Need to wait
+                        plan_state = KEEP_LANE;
+                    }
+                }
+                else {
+                    tgt_vel_ms = MAX_VEL_MS;
+                }
+            } else {
+                // No cars ahead, can accelerate if not at MAX_VEL_MS
+                tgt_vel_ms  = MAX_VEL_MS;
+                tgt_lane    = curr_lane;
+            }
+            break;
+        case PREP_CL:
+            // Can remain in PREP, or can change left
+            // Slow down until a safe distance away from car_ahead
+            if (CAR_S_TO_REAR(car_ahead.curr_s) - CAR_S_TO_FRONT(cd.end_path_s) < LANE_CHANGE_EGO_BUFFER_M) {
+                tgt_vel_ms -= PREP_SPEED_STEP;
+            } else {
+                if (_is_safe_to_change_lanes(left_lane)) {
+                    plan_state = CHANGE_LEFT;
+                }
+            }
+            break;
+        case PREP_CR:
+            // Can remain in PREP, or can change left
+            // Slow down until a safe distance away from car_ahead
+            if (CAR_S_TO_REAR(car_ahead.curr_s) - CAR_S_TO_FRONT(cd.end_path_s) < LANE_CHANGE_EGO_BUFFER_M) {
+                tgt_vel_ms -= PREP_SPEED_STEP;
+            } else {
+                if (_is_safe_to_change_lanes(right_lane)) {
+                    plan_state = CHANGE_RIGHT;
+                }
+            }
+            break;
+        case CHANGE_LEFT:
+            // Must change left this cycle, then change to KEEP_LANE
+            if (_is_safe_to_change_lanes(left_lane)) {
+                tgt_lane = D_TO_LANE(left_lane_d);
+                tgt_vel_ms= left_lane.getMergeSpeed();
+            } else {
+                cout << "Can't change lane safely! Keeping lane instead" << endl;
+            }
+            plan_state = KEEP_LANE;
+            break;
+        case CHANGE_RIGHT:
+            // Must change right this cycle, then change to KEEP_LANE
+            if (_is_safe_to_change_lanes(right_lane)) {
+                tgt_lane = D_TO_LANE(right_lane_d);
+                tgt_vel_ms= right_lane.getMergeSpeed();
+            } else {
+                cout << "Can't change lane safely! Keeping lane instead" << endl;
+            }
+            plan_state = KEEP_LANE;
+            break;
     }
 }
 
@@ -159,8 +387,11 @@ vector<vector<double>> Planner::get_next_pos_vals(CarData &cd) {
     vector<double> next_x_vals;
     vector<double> next_y_vals;
 
+    //////////////////////////////
+    // Trajectory preparation
+
     // Prepare a reference position: i.e. car's last position in last trajectory
-    cout << "previos path has size: " << cd.previous_path_x.size() << endl;
+//    cout << "previous path has size: " << cd.previous_path_x.size() << endl;
     vector<vector<double>> ref_vec  = get_ref_vec(cd);
     vector<double> prev_ref_pos     = ref_vec[0];
     vector<double> ref_pos          = ref_vec[1];
@@ -169,17 +400,21 @@ vector<vector<double>> Planner::get_next_pos_vals(CarData &cd) {
     double ref_yaw  = ref_pos[2];
 
     // Check for traffic and incoming collisions
+    // Sets tgt_lane and tgt_vel for this trajectory
     avoid_traffic(cd, ref_pos);
 
     // Prepare spline points
-    vector<vector<double>> spline_points = get_spline_points(cd, ref_vec);
-    vector<double> spline_pts_x= spline_points[0];
-    vector<double> spline_pts_y= spline_points[1];
-    curr_lane       = tgt_lane;
+    vector<vector<double>> spline_points= get_spline_points(cd, ref_vec);
+    vector<double> spline_pts_x         = spline_points[0];
+    vector<double> spline_pts_y         = spline_points[1];
+    curr_lane                           = tgt_lane;
 
     // Prepare spline with interp points
     tk::spline s;
     s.set_points(spline_pts_x, spline_pts_y);
+
+    // END Prepare trajectory
+    ////////////////////////////
 
     // Enqueue remaining prev path waypoints to new trajectory
     int prev_size = cd.previous_path_x.size();
@@ -189,7 +424,7 @@ vector<vector<double>> Planner::get_next_pos_vals(CarData &cd) {
     }
 
     // Break up spline points so reference velocity is maintained
-    double horizon_x = 30.0; // 30m forward
+    double horizon_x = 40.0; // 40m forward
     double horizon_y = s(horizon_x);
     double hzn_dist = sqrt((horizon_x*horizon_x) + (horizon_y*horizon_y));
     double last_x_l = 0.0;
@@ -206,10 +441,8 @@ vector<vector<double>> Planner::get_next_pos_vals(CarData &cd) {
             curr_vel_ms     -= delta_vel;
             curr_vel_ms      = max(tgt_vel_ms, curr_vel_ms);
         }
-        cout << "curr_vel_ms: " << curr_vel_ms << endl;
         if (fabs(curr_vel_ms) < EPSILON) {
             // Avoid divide by 0
-            cout << "curr_vel_ms is too close to zero!" << endl;
             next_x_vals.push_back(ref_x);
             next_y_vals.push_back(ref_y);
             continue;
@@ -231,6 +464,7 @@ vector<vector<double>> Planner::get_next_pos_vals(CarData &cd) {
 
         next_x_vals.push_back(x_w);
         next_y_vals.push_back(y_w);
-    } cout << endl;
+    }
+//    cout << "curr lane" << curr_lane << "\tplan_state: " << plan_state << endl;
     return {next_x_vals, next_y_vals};
 }

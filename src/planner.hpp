@@ -1,0 +1,128 @@
+#ifndef PLANNER_H
+#define PLANNER_H
+
+#include <cmath> // floor
+#include <set>
+#include <vector>
+#include "json.hpp"
+
+#define MAX_S 6945.554
+#define SIM_PD 0.02
+#define MPS_TO_MPH 2.237
+#define LANE_WIDTH 4.0
+#define LANE_CENTER_D(lane) ((lane)*LANE_WIDTH + 0.5*LANE_WIDTH)
+#define D_TO_LANE(d) ((int)floor(d / LANE_WIDTH))
+// TODO: verify the car length empirically
+#define CAR_LENGTH_M 4.5
+// TODO: tune the factor
+#define VALID_CAR_GAP_M (CAR_LENGTH_M * 1.5)
+// TODO is car s the center of the car?
+#define CAR_S_TO_FRONT(s) (s + CAR_LENGTH_M/2.0)
+#define CAR_S_TO_REAR(s)  (s - CAR_LENGTH_M/2.0)
+#define LANE_CHANGE_MERGE_BUFFER_M (2.5)
+#define LANE_CHANGE_EGO_BUFFER_M (5)
+#define PREP_SPEED_STEP (5.0 / MPS_TO_MPH) // 5mph step
+
+#define LEFTMOST_LANE 0
+#define RIGHTMOST_LANE 2
+
+
+
+using nlohmann::json;
+using std::vector;
+
+struct CarData {
+    double car_x;
+    double car_y;
+    double car_s;
+    double car_d;
+    double car_yaw;
+    double car_speed;
+
+    double end_path_s;
+    double end_path_d;
+
+    json previous_path_x;
+    json previous_path_y;
+    // Sensor Fusion Data, a list of all other cars on the same side
+    //   of the road.
+    json sensor_fusion;
+};
+
+class LaneCar{
+    public:
+        double curr_s;
+        double curr_d;
+        double speed_ms;
+        LaneCar () = default;
+        LaneCar (double _curr_s, double _curr_d, double _speed_ms) : curr_s(_curr_s), curr_d(_curr_d), speed_ms(_speed_ms) {};
+        ~LaneCar () = default;
+
+        inline bool operator< (const LaneCar rhs) const { return curr_s < rhs.curr_s; }
+};
+
+struct LaneGap{
+    double gap_follow_s;
+    double gap_follow_speed_ms;
+    double gap_lead_s;
+    double gap_lead_speed_ms;
+};
+
+class CarLane {
+    public:
+        CarLane(double _ego_end_path_s, double _lane_d);
+        ~CarLane() {};
+        void add_car_to_lane(double next_car_s, double next_car_speed);
+        bool has_nearest_lead_car();
+        bool has_nearest_follow_car();
+        LaneCar get_nearest_lead_car();
+        LaneCar get_nearest_follow_car();
+        bool canMerge();
+        bool canMergeFasterThan(double thresh_speed_ms);
+        double getMergeSpeed();
+        static bool isValidGap(const LaneCar &lead_car, const LaneCar &follow_car) {
+            return (CAR_S_TO_REAR(lead_car.curr_s) - CAR_S_TO_FRONT(follow_car.curr_s)
+                    > VALID_CAR_GAP_M);
+        }
+        static bool isFasterThan(const LaneCar &lead_car, const LaneCar &follow_car, double thresh_speed_ms) {
+            return ((lead_car.speed_ms + follow_car.speed_ms) / 2.0 > thresh_speed_ms);
+        }
+    private:
+        std::set<LaneCar> lane_cars; // Ordered set of cars
+        double ego_end_path_s;
+        double lane_d;
+};
+
+enum PlannerState {KEEP_LANE=0, PREP_CL=1, PREP_CR=2, CHANGE_LEFT=3, CHANGE_RIGHT=4};
+
+class Planner {
+    public :
+        static const int TRAJ_POINTS         = 50;
+        static constexpr double MAX_VEL_MS       = 49.5 / MPS_TO_MPH; // m/s
+        static constexpr double SAFE_ACC_INC     = 9.5;  // m/s2
+        static constexpr double SAFE_DISTANCE_M  = 40.0; // m
+        Planner(vector<vector<double>> map_waypoints_info);
+        ~Planner() {}
+
+        vector<vector<double>> get_next_pos_vals(CarData &cd);
+    private:
+
+        PlannerState plan_state;
+
+        bool _is_safe_to_change_lanes(CarLane &tgt_lane);
+        vector<vector<double>> get_spline_points(CarData &cd, vector<vector<double>> ref_vec);
+        void avoid_traffic(CarData &cd, vector<double>ref_pos);
+        vector<vector<double>> get_ref_vec(CarData &cd);
+
+        vector<double> map_waypoints_x;
+        vector<double> map_waypoints_y;
+        vector<double> map_waypoints_s;
+        vector<double> map_waypoints_dx;
+        vector<double> map_waypoints_dy;
+        int curr_lane;
+        double curr_vel_ms;
+        int tgt_lane;
+        double tgt_vel_ms;
+};
+#endif  // PLANNER_H
+

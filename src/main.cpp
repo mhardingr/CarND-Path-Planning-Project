@@ -6,7 +6,7 @@
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
-#include "planner.h"
+#include "planner.hpp"
 
 // for convenience
 using nlohmann::json;

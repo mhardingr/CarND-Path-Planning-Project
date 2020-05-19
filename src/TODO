@@ -1,0 +1,104 @@
+Okay, I have lane-change sort of working. But I keep hitting acceleration limits
+when changing lanes - set longer horizon??
+Also, it's not properly checking for gaps. When 3 cars in 3 lanes ahead, it
+keeps jumping between lanes instead of sticking with the fastest lane.
+
+
+    ---
+
+
+DONE. Implement accel/decel with tgt and curr velocities
+Next, generate multiple possible trajectories (associated with different possible states), and evaluate their cost to execute.
+- Select the trajectory with the lowest cost
+- Possible states: Keep Lane, Prepare CL, Prepare CR, CL, and CR
+- Right now, only have Keep Lane stat implemented.
+- Can also prune proposed trajectories by their feasibility (avoid collision)
+- What costs?: Just speed cost? Maybe efficiency cost (based on intended/final lane)
+
+
+Pseudo-code:
+- The states' only free parameter is the desired lane and successor states
+--- The set_point velocity and even the spline trajectory is basically set from these
+- The prepare lane change states have a little more intelligence (their set-point velocity matches a gap between cars in intended lane)
+- Possible successor states (KL->prepare*; prepare* -> *(lane change); lane change->KL)
+-- The cost function appears only useful in deciding when to go from KL -> prepare*.
+--- Does this really need a cost function?
+---- Answer these questions: Am I in the fastest lane I could be in at the moment (i.e. for given s)? Will I be in the fastest lane I could be in at the end of this traj (i.e. end_s)?
+
+The assumption is that the state transition function is simple. And that we can characterize any trajectory only by its endpoints (end_s and end_d), which is only partly true.
+Story time:
+- In KL, we can stay in our lane until we're forced to slow down because of a car ahead of us.
+---- If no cars on either side of us, we want to change lane into the fastest lane (i.e. left, preferably)
+     If there are cars on either side of us, we want to search for a gap behind us that would fit us and some wiggle room. 
+     - Which gap do we prefer if there are gaps on left and right? (Closest gap, or fastest moving gap?)
+     -- What is the speed of a gap? The speed of the midpoint? Or average speed of the cars creating the gap? They're the same
+     - How do you know when you can turn into the gap? When we overlap with the gap and match its speed
+     -- What if gap speed is greater than keep_lane speed? This could happen. Need wide enough gap in that lane, and some room in our lange for the maneuver.
+     --- Should match speed of gap just before we overlap with it.
+
+
+
+Gaps:
+A gap is the space between a lead and follow car. Calculated by taking (lead_car_s - .5*CAR_LENGTH - (follow_car_s + .5*CAR_LENGTH)) = (lcs - fcs - CAR_LENGTH)
+A viable gap is a gap that spans at least 1.25*CAR_LENGTH
+Closest viable gap is such a gap whose midpoint_s is closest than all other such gaps in that lane
+From trajectory to trajectory generated, we want consider the same gaps as options - we could optimize and track these gaps, but the sensor_fusion data is unordered so no efficiency is gained.
+So we must generate in the same way a list of viable gaps for each left/right lanes for every trajectory.
+For lane changes, we only consider the nearest viable gaps in each lane.
+- As well, PREP->CHANGE still incurs a delay of a whole trajectory (1s). PREP must account for 1s delay before speed will be matched.
+- PREP state can dictate slowing down slightly per traject until lane change is triggered (or minimum keep_lane speed is reached)
+- Once nearest viable gap is overlapping (i.e. we're behind the lead car and ahead of the follow car)
+-- then consider is it safe to switch lanes: will the gap still be viable size in next 2 seconds? will we still be safely within gap in next 2 seconds?
+
+   
+How do I stop myself from overdoing this project? I think we should start small and iterate from there
+- Simple approach: switch lanes when car ahead. Choose left lane until we can't anymore, then choose right
+-- Prepare state slows the car to on a slope to a minimum speed until we overlap with the gap with some buffer room
+-- Trigger the lane change maneuver only when gap is still overlapping and viable in 1s if we match the midpoint speed.
+---- Also want to make sure that maneuver will not cause crash with car ahead. Otherwise, keep lane and try again (this could cause repetitive speed-brake behavior)
+
+Pseudo-code:
+avoid_traffic() {
+    // Determine if car ahead
+
+    if plan_state == KEEP_LANE:
+        if car_ahead:
+            // Need to match it's speed to avoid crashing (could even enforce a setpoint distance)
+            tgt_speed = car_ahead.speed
+            if tgt_speed < MAX_SPEED:
+                // We should switch lanes
+                lane_switch_flag = true
+        else:
+            // No car ahead, just cruise
+            tgt_speed = MAX_SPEED
+            lane_switch_flag = false
+        if lane_switch_flag:
+            // Objective is to get around car ahead. Switch into lane moving faster (bias towards left)
+            if tgt_lane != LEFTMOST_LANE && left_lane.nearest_gap.speed > car_ahead.speed:
+                plan_state = PREP_CL
+            else if tgt_lane != RIGHTMOST_LANE && right_lane.nearest_gap.speed > car_ahead.speed
+                plan_state = PREP_CR
+    else if plan_state == PREP_CL || plan_state == PREP_CR
+        // Should be slowing down until a threshold distance of 25m with car ahead
+        if car_ahead.pred_s - end_s < LANE_CHANGE_THRESHOLD_M:
+            tgt_speed -= PREP_SPEED_DEC // 5mph
+            // Don't change lanes yet
+            tgt_lane = curr_lane 
+            return
+        else:
+            // Have enough space ahead - is there enough space in new lane?
+            next_lane = plan_state == PREP_CL ? left_lane : right_lane;
+            if _is_safe_to_change_lanes(next_lane):
+               plan_state = CHANGE_LEFT | CHANGE_RIGHT
+    else if plan_state == CHANGE_LEFT | CHANGE_RIGHT:
+        next_lane = plan_state == CHANGE_LEFT ? left_lane : right_lane;
+        if _is_safe_to_change_lanes(next_lane):
+           tgt_lane = next_lane.lane_id
+           tgt_speed = 0.5*next_lane.lead_speed + 0.5*next_lane.follow_speed
+           plan_state = KEEP_LANE 
+                
+
+
+
+}
+}
