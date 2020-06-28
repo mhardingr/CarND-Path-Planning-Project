@@ -7,23 +7,25 @@
 #include "json.hpp"
 
 #define MAX_S 6945.554
+#define SAFE_S_ADD(x,y) (fmod((x)+(y), MAX_S))
 #define SIM_PD 0.02
 #define MPS_TO_MPH 2.237
 #define LANE_WIDTH 4.0
 #define LANE_CENTER_D(lane) ((lane)*LANE_WIDTH + 0.5*LANE_WIDTH)
 #define D_TO_LANE(d) ((int)floor(d / LANE_WIDTH))
-// TODO: verify the car length empirically
-#define CAR_LENGTH_M 4.5
+#define CAR_LENGTH_M 5.0
 // TODO: tune the factor
-#define VALID_CAR_GAP_M (CAR_LENGTH_M * 1.5)
+#define LANE_HORIZON_M 25.0
+#define VALID_CAR_GAP_M (CAR_LENGTH_M * 7)
 // TODO is car s the center of the car?
-#define CAR_S_TO_FRONT(s) (s + CAR_LENGTH_M/2.0)
+#define CAR_S_TO_FRONT(s) (SAFE_S_ADD(s, CAR_LENGTH_M/2.0))
 #define CAR_S_TO_REAR(s)  (s - CAR_LENGTH_M/2.0)
-#define LANE_CHANGE_MERGE_BUFFER_M (2.5)
-#define LANE_CHANGE_EGO_BUFFER_M (5)
-#define PREP_SPEED_STEP (5.0 / MPS_TO_MPH) // 5mph step
+#define LANE_CHANGE_MERGE_BUFFER_M (20.)
+#define LANE_CHANGE_EGO_BUFFER_M (15.0)
+#define PREP_SPEED_STEP ((5.0 / MPS_TO_MPH) * SIM_PD) // 5mph step per SIM_PD
 
 #define LEFTMOST_LANE 0
+#define CENTER_LANE 1
 #define RIGHTMOST_LANE 2
 
 
@@ -51,14 +53,20 @@ struct CarData {
 
 class LaneCar{
     public:
+        bool is_init;   // Default: false
         double curr_s;
         double curr_d;
         double speed_ms;
-        LaneCar () = default;
-        LaneCar (double _curr_s, double _curr_d, double _speed_ms) : curr_s(_curr_s), curr_d(_curr_d), speed_ms(_speed_ms) {};
+        LaneCar () {
+            is_init =false;
+            curr_s  =0.0;
+            curr_d  =-1.0;
+            speed_ms=0.0;
+        }
+        LaneCar (double _curr_s, double _curr_d, double _speed_ms) : is_init(true), curr_s(_curr_s), curr_d(_curr_d), speed_ms(_speed_ms) {};
         ~LaneCar () = default;
 
-        inline bool operator< (const LaneCar rhs) const { return curr_s < rhs.curr_s; }
+        inline bool operator< (const LaneCar rhs) const { return is_init && curr_s < rhs.curr_s; }
 };
 
 struct LaneGap{
@@ -77,9 +85,11 @@ class CarLane {
         bool has_nearest_follow_car();
         LaneCar get_nearest_lead_car();
         LaneCar get_nearest_follow_car();
+        void process_nearest_cars();
         bool canMerge();
         bool canMergeFasterThan(double thresh_speed_ms);
         double getMergeSpeed();
+        void print_nearest_cars();
         static bool isValidGap(const LaneCar &lead_car, const LaneCar &follow_car) {
             return (CAR_S_TO_REAR(lead_car.curr_s) - CAR_S_TO_FRONT(follow_car.curr_s)
                     > VALID_CAR_GAP_M);
@@ -89,6 +99,7 @@ class CarLane {
         }
     private:
         std::set<LaneCar> lane_cars; // Ordered set of cars
+        std::pair<LaneCar, LaneCar> nearest_cars;   // first-> follow, second->lead
         double ego_end_path_s;
         double lane_d;
 };
@@ -97,7 +108,7 @@ enum PlannerState {KEEP_LANE=0, PREP_CL=1, PREP_CR=2, CHANGE_LEFT=3, CHANGE_RIGH
 
 class Planner {
     public :
-        static const int TRAJ_POINTS         = 50;
+        static const int TRAJ_POINTS             = 50;
         static constexpr double MAX_VEL_MS       = 49.5 / MPS_TO_MPH; // m/s
         static constexpr double SAFE_ACC_INC     = 9.5;  // m/s2
         static constexpr double SAFE_DISTANCE_M  = 40.0; // m
@@ -108,6 +119,7 @@ class Planner {
     private:
 
         PlannerState plan_state;
+        bool lane_change_trigerred;
 
         bool _is_safe_to_change_lanes(CarLane &tgt_lane);
         vector<vector<double>> get_spline_points(CarData &cd, vector<vector<double>> ref_vec);

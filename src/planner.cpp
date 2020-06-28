@@ -20,28 +20,70 @@ void CarLane::add_car_to_lane(double next_car_s, double next_car_speed) {
     lane_cars.insert( LaneCar{next_car_s, lane_d, next_car_speed} );
 }
 
+void CarLane::process_nearest_cars() {
+    // Sets nearest lead and follow cars
+    bool done           = false;
+    bool found_follow   = lane_cars.size() > 1 ? true : false;
+    bool found_lead     = false;
+    double follow_distance, lead_distance;
+    std::set<LaneCar>::iterator follow_it = lane_cars.end();
+    std::set<LaneCar>::iterator lead_it = lane_cars.begin();
+    while (!done) {
+        if (lead_it->curr_s > ego_end_path_s) {
+            // Found lead car
+            lead_distance = lead_it->curr_s - ego_end_path_s;
+            follow_distance = ego_end_path_s - follow_it->curr_s;
+            found_lead = true;
+            done = true;
+        } else if (lead_it == lane_cars.end()) {
+            // Increment follow_it to lead, set follow_dist and exit loop
+            follow_it = lead_it;
+            follow_distance = ego_end_path_s - follow_it->curr_s;
+            done  = true;
+        } else {
+            // At least one
+            follow_it = lead_it;
+            lead_it++;
+        }
+    }
+
+    // Found the nearest cars ahead and behind (filter by horizon distance)
+    LaneCar follow_car, lead_car;
+    if (found_follow && follow_distance < LANE_HORIZON_M) {
+        follow_car = *follow_it;
+    }
+    if (found_lead && lead_distance < LANE_HORIZON_M) {
+        lead_car   = *lead_it;
+    }
+    nearest_cars = std::pair<LaneCar,LaneCar>(follow_car, lead_car);
+}
+
+void CarLane::print_nearest_cars() {
+    LaneCar follow_car, lead_car;
+    follow_car = nearest_cars.first;
+    lead_car = nearest_cars.second;
+    cout << "Follow (is_init=" << follow_car.is_init << ", curr_s=" << follow_car.curr_s << ", speed_ms=" << follow_car.speed_ms \
+        << ")\nSecond (is_init=" << lead_car.is_init << ", curr_s=" << lead_car.curr_s << ", speed_ms=" << lead_car.speed_ms << ")" << endl;
+}
+
 bool CarLane::has_nearest_lead_car() {
     // Returns whether there exists a car in this lane just ahead or alongside ego-car (in s-coordinates)
-    auto lane_next_car = lane_cars.equal_range( LaneCar{ ego_end_path_s, lane_d, -1.0} );
-    return lane_next_car.first != lane_cars.end();
+    return nearest_cars.second.is_init;
 }
 
 LaneCar CarLane::get_nearest_lead_car() {
     // Returns the first car ahead or right next to ego car
-    auto lane_next_car = lane_cars.equal_range( LaneCar{ ego_end_path_s, lane_d, -1.0} );
-    return *lane_next_car.first;
+    return nearest_cars.second;
 }
 
 bool CarLane::has_nearest_follow_car() {
     // Returns whether there exists a car in this lane just behind (in s-coordinates)
-    auto lane_next_car = lane_cars.equal_range( LaneCar{ ego_end_path_s, lane_d, -1.0} );
-    return lane_next_car.first != lane_cars.begin();
+    return nearest_cars.first.is_init;
 }
 
 LaneCar CarLane::get_nearest_follow_car() {
     // Returns the first car behind ego car
-    auto lane_next_car = lane_cars.equal_range( LaneCar{ ego_end_path_s, lane_d, -1.0} );
-    return *(--lane_next_car.first);
+    return nearest_cars.first;
 }
 
 bool CarLane::canMerge() {
@@ -53,32 +95,32 @@ bool CarLane::canMerge() {
     bool has_lead = has_nearest_lead_car();
     bool has_follow = has_nearest_follow_car();
     if (has_lead && !has_follow) {
-        cout << "(canMerge) Lane (" << D_TO_LANE(lane_d) << " has only lead car." << endl;
+//        cout << "(canMerge) Lane (" << D_TO_LANE(lane_d) << " has only lead car." << endl;
         double lead_s = get_nearest_lead_car().curr_s;
-        if (CAR_S_TO_REAR(lead_s) - CAR_S_TO_FRONT(ego_end_path_s) > LANE_CHANGE_MERGE_BUFFER_M) {
-            cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
+        if ((CAR_S_TO_REAR(lead_s) - CAR_S_TO_FRONT(ego_end_path_s)) > LANE_CHANGE_MERGE_BUFFER_M) {
+//            cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
             return true;
         }
     } else if (has_lead && has_follow) {
         // Gap exists to left, is it fast enough and large enough?
-        cout << "(canMerge) Lane (" << D_TO_LANE(lane_d) << " has lead and follow." << endl;
+//        cout << "(canMerge) Lane (" << D_TO_LANE(lane_d) << " has lead and follow." << endl;
         LaneCar lead    = get_nearest_lead_car();
         LaneCar follow  = get_nearest_follow_car();
         if (CarLane::isValidGap(lead, follow)) {
-            cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
+//            cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
             return true;
         }
     } else if (!has_lead && has_follow) {
-        cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has only follow." << endl;
+//        cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has only follow." << endl;
         double follow_s = get_nearest_follow_car().curr_s;
-        if (CAR_S_TO_FRONT(follow_s) - CAR_S_TO_REAR(ego_end_path_s) > LANE_CHANGE_MERGE_BUFFER_M) {
-            cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
+        if ((CAR_S_TO_REAR(ego_end_path_s) - CAR_S_TO_FRONT(follow_s)) > LANE_CHANGE_MERGE_BUFFER_M) {
+//            cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
             return true;
         }
     } else {
         // No cars!
-        cout << "(canMerge) Lane (" << D_TO_LANE(lane_d) << " is empty!" << endl;
-        cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
+//        cout << "(canMerge) Lane (" << D_TO_LANE(lane_d) << " is empty!" << endl;
+//        cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
         return true;
     }
     return false;
@@ -115,7 +157,7 @@ bool CarLane::canMergeFasterThan(double thresh_speed_ms) {
         }
     } else {
         // No cars!
-        cout << "Lane (" << D_TO_LANE(lane_d) << " is empty!\n\t->PREP_CL" << endl;
+        cout << "Lane (" << D_TO_LANE(lane_d) << ") is empty!\t->PREP_CL" << endl;
         return true;
     }
     return false;
@@ -142,18 +184,18 @@ double CarLane::getMergeSpeed() {
     }
 }
 
-
 Planner::Planner(vector<vector<double>> map_waypoints_info) {
-    map_waypoints_x     = map_waypoints_info[0];
-    map_waypoints_y     = map_waypoints_info[1];
-    map_waypoints_s     = map_waypoints_info[2];
-    map_waypoints_dx    = map_waypoints_info[3];
-    map_waypoints_dy    = map_waypoints_info[4];
-    curr_lane           = RIGHTMOST_LANE;
-    curr_vel_ms         = 0.0;
-    tgt_lane            = curr_lane;
-    tgt_vel_ms          = MAX_VEL_MS;
-    plan_state          = KEEP_LANE;
+    map_waypoints_x         = map_waypoints_info[0];
+    map_waypoints_y         = map_waypoints_info[1];
+    map_waypoints_s         = map_waypoints_info[2];
+    map_waypoints_dx        = map_waypoints_info[3];
+    map_waypoints_dy        = map_waypoints_info[4];
+    curr_lane               = CENTER_LANE;
+    curr_vel_ms             = 0.0;
+    tgt_lane                = curr_lane;
+    tgt_vel_ms              = MAX_VEL_MS;
+    plan_state              = KEEP_LANE;
+    lane_change_trigerred   = false;
 }
 
 vector<vector<double>> Planner::get_spline_points(CarData &cd, vector<vector<double>> ref_vec) {
@@ -170,25 +212,36 @@ vector<vector<double>> Planner::get_spline_points(CarData &cd, vector<vector<dou
     vector<double> spline_pts_x;
     vector<double> spline_pts_y;
 
-    spline_pts_x.push_back(prev_ref_x);
-    spline_pts_y.push_back(prev_ref_y);
+    if (fabs(prev_ref_x - ref_x) < EPSILON) {
+        double prev_spacing = 2.5;
+        vector<double> prev_interp = getXY(SAFE_S_ADD(cd.car_s,-prev_spacing),
+                                             LANE_CENTER_D(curr_lane),
+                                             map_waypoints_s, map_waypoints_x,
+                                             map_waypoints_y);
+        spline_pts_x.push_back(prev_interp[0]);
+        spline_pts_y.push_back(prev_interp[1]);
+    } else {
+        spline_pts_x.push_back(prev_ref_x);
+        spline_pts_y.push_back(prev_ref_y);
+    }
     spline_pts_x.push_back(ref_x);
     spline_pts_y.push_back(ref_y);
 
-    int interp_spacing = 30;
+    int interp_spacing = 40;
     // Using tgt_lane for next 3 waypoints
-    vector<double> next_interp0 = getXY(cd.car_s+interp_spacing,
+    vector<double> next_interp0 = getXY(SAFE_S_ADD(cd.car_s,interp_spacing),
                                          LANE_CENTER_D(tgt_lane),
                                          map_waypoints_s, map_waypoints_x,
                                          map_waypoints_y);
-    vector<double> next_interp1 = getXY(cd.car_s+2*interp_spacing,
+    vector<double> next_interp1 = getXY(SAFE_S_ADD(cd.car_s,2*interp_spacing),
                                          LANE_CENTER_D(tgt_lane),
                                          map_waypoints_s, map_waypoints_x,
                                          map_waypoints_y);
-    vector<double> next_interp2 = getXY(cd.car_s+3*interp_spacing,
+    vector<double> next_interp2 = getXY(SAFE_S_ADD(cd.car_s,3*interp_spacing),
                                          LANE_CENTER_D(tgt_lane),
                                          map_waypoints_s, map_waypoints_x,
                                          map_waypoints_y);
+
     spline_pts_x.push_back(next_interp0[0]);
     spline_pts_x.push_back(next_interp1[0]);
     spline_pts_x.push_back(next_interp2[0]);
@@ -216,8 +269,8 @@ vector<vector<double>> Planner::get_ref_vec(CarData &cd) {
     double prev_ref_y;
 
     int prev_size = cd.previous_path_x.size();
-    if (prev_size < 2) {
-        // Just starting, so extrapolate a previous point
+    if (prev_size < 2 ) {
+        // Just starting or traj is vertical, so extrapolate a previous point
         ref_x   = cd.car_x;
         ref_y   = cd.car_y;
         ref_yaw = deg2rad(cd.car_yaw);
@@ -231,10 +284,6 @@ vector<vector<double>> Planner::get_ref_vec(CarData &cd) {
         prev_ref_y  = cd.previous_path_y[prev_size-2];
         ref_yaw = atan2(ref_y-prev_ref_y, ref_x-prev_ref_x);
 
-        // Use the end of the prev trajectory as start
-        if (fabs(prev_ref_x - ref_x) < 0.000001) {
-            cout << "Last path's last x is too close to ref_x" << endl;
-        }
     }
     vector<double> ref_pos = {ref_x, ref_y, ref_yaw};
     vector<double> prev_ref_pos = {prev_ref_x, prev_ref_y, -1.0};
@@ -280,6 +329,8 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
         double det_car_d            = sensor_fusion[i][6];
 
         // Predict car's s-coord at the end of previous trajectory (i.e. rel. to ref_pos)
+        // Note: we keep the raw pred_s (no modulo) in order to maintain car order in
+        // each lane
         double pred_s   = det_car_s + (prev_size * det_car_speed * SIM_PD);
 
         // Determine if any cars in same lane ahead within the radius
@@ -288,16 +339,21 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
         if (det_car_lane == car_lane) {
             // Add car to ego lane
             ego_lane.add_car_to_lane(pred_s, det_car_speed);
-        } else if (det_car_lane >= LEFTMOST_LANE && det_car_lane > car_lane) {//TODO:
+        } else if (det_car_lane >= LEFTMOST_LANE && det_car_lane < car_lane) {
             // Other car is to our left in our way of traffic
             // update left lane gap
             left_lane.add_car_to_lane(pred_s, det_car_speed);
 
-        } else if (det_car_lane <= RIGHTMOST_LANE && det_car_lane < car_lane) {//TODO
+        } else if (det_car_lane <= RIGHTMOST_LANE && det_car_lane > car_lane) {
             // Other car is to our right in our way of traffic
             right_lane.add_car_to_lane(pred_s, det_car_speed);
         }
     }
+
+    // Process the lanes' cars to find the nearest lead and follow cars
+    left_lane.process_nearest_cars();
+    ego_lane.process_nearest_cars();
+    right_lane.process_nearest_cars();
 
     // Get car ahead
     bool car_ahead_exists = false;
@@ -305,7 +361,6 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
     if (ego_lane.has_nearest_lead_car()) {
         car_ahead_exists = true;
         car_ahead = ego_lane.get_nearest_lead_car();
-//        cout << "Car ahead! s:" << car_ahead.curr_s << " | our s:" << cd.end_path_s << endl;
     }
 
     // Examine options for all possible successor states
@@ -341,44 +396,74 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
         case PREP_CL:
             // Can remain in PREP, or can change left
             // Slow down until a safe distance away from car_ahead
-            if (CAR_S_TO_REAR(car_ahead.curr_s) - CAR_S_TO_FRONT(cd.end_path_s) < LANE_CHANGE_EGO_BUFFER_M) {
-                tgt_vel_ms -= PREP_SPEED_STEP;
+            if (car_ahead_exists && (CAR_S_TO_REAR(car_ahead.curr_s) - CAR_S_TO_FRONT(cd.end_path_s)) < LANE_CHANGE_EGO_BUFFER_M) {
+                tgt_vel_ms -= PREP_SPEED_STEP * (TRAJ_POINTS - prev_size);
+                cout << "(PREP_CL) Slowing down to avoid hitting car ahead. Current speed: " << tgt_vel_ms << endl;
             } else {
                 if (_is_safe_to_change_lanes(left_lane)) {
+                    cout << "Trigerring lane change LEFT..." << endl;
                     plan_state = CHANGE_LEFT;
+                } else {
+                    cout << "Maintaining set speed until safe to trigger lane change LEFT..." << endl;
                 }
             }
             break;
         case PREP_CR:
             // Can remain in PREP, or can change left
             // Slow down until a safe distance away from car_ahead
-            if (CAR_S_TO_REAR(car_ahead.curr_s) - CAR_S_TO_FRONT(cd.end_path_s) < LANE_CHANGE_EGO_BUFFER_M) {
-                tgt_vel_ms -= PREP_SPEED_STEP;
+            if (car_ahead_exists && (CAR_S_TO_REAR(car_ahead.curr_s) - CAR_S_TO_FRONT(cd.end_path_s)) < LANE_CHANGE_EGO_BUFFER_M) {
+                tgt_vel_ms -= PREP_SPEED_STEP * (TRAJ_POINTS - prev_size);
+                cout << "(PREP_CR) Slowing down to avoid hitting car ahead. Current speed: " << tgt_vel_ms << endl;
             } else {
                 if (_is_safe_to_change_lanes(right_lane)) {
+                    cout << "Trigerring lane change RIGHT..." << endl;
                     plan_state = CHANGE_RIGHT;
+                } else {
+                    cout << "Maintaining set speed until safe to trigger lane change RIGHT..." << endl;
                 }
             }
             break;
         case CHANGE_LEFT:
-            // Must change left this cycle, then change to KEEP_LANE
-            if (_is_safe_to_change_lanes(left_lane)) {
-                tgt_lane = D_TO_LANE(left_lane_d);
-                tgt_vel_ms= left_lane.getMergeSpeed();
+            if (!lane_change_trigerred) {
+                if (_is_safe_to_change_lanes(left_lane)) {
+                    lane_change_trigerred = true;
+                    tgt_lane = D_TO_LANE(left_lane_d);
+                    tgt_vel_ms= left_lane.getMergeSpeed();
+                    cout << "Lane change trigerred!" << endl;
+                } else {
+                    cout << "Can't change lane safely! Keeping lane instead" << endl;
+                    plan_state = KEEP_LANE;
+                }
             } else {
-                cout << "Can't change lane safely! Keeping lane instead" << endl;
+                if (tgt_lane == ego_lane_i) {
+                    plan_state           = KEEP_LANE;
+                    lane_change_trigerred= false;
+                    cout << "Lane change complete." << endl;
+                } else {
+                    cout << "Changing into the left lane ..." << endl;
+                }
             }
-            plan_state = KEEP_LANE;
             break;
         case CHANGE_RIGHT:
-            // Must change right this cycle, then change to KEEP_LANE
-            if (_is_safe_to_change_lanes(right_lane)) {
-                tgt_lane = D_TO_LANE(right_lane_d);
-                tgt_vel_ms= right_lane.getMergeSpeed();
+            if (!lane_change_trigerred) {
+                if (_is_safe_to_change_lanes(right_lane)) {
+                    lane_change_trigerred = true;
+                    tgt_lane = D_TO_LANE(right_lane_d);
+                    tgt_vel_ms= right_lane.getMergeSpeed();
+                    cout << "Lane change trigerred!" << endl;
+                } else {
+                    cout << "Can't change lane safely! Keeping lane instead" << endl;
+                    plan_state = KEEP_LANE;
+                }
             } else {
-                cout << "Can't change lane safely! Keeping lane instead" << endl;
+                if (tgt_lane == ego_lane_i) {
+                    plan_state           = KEEP_LANE;
+                    lane_change_trigerred= false;
+                    cout << "Lane change complete." << endl;
+                } else {
+                    cout << "Changing into the right lane ..." << endl;
+                }
             }
-            plan_state = KEEP_LANE;
             break;
     }
 }
@@ -432,7 +517,13 @@ vector<vector<double>> Planner::get_next_pos_vals(CarData &cd) {
     // Interpolate remaining waypoints using spline and controlling for speed
     for (int i=0; i<TRAJ_POINTS-prev_size; i++) {
         // Accelerate/decelerate realistically
-        double delta_vel = SIM_PD * SAFE_ACC_INC;
+        double delta_vel;
+        if (lane_change_trigerred) {
+            // Lane change long. acceleration should be cut down
+            delta_vel = SIM_PD * 0.5 * SAFE_ACC_INC;
+        } else {
+            delta_vel = SIM_PD * SAFE_ACC_INC;
+        }
         if (curr_vel_ms < tgt_vel_ms) {
             curr_vel_ms     += delta_vel;
             curr_vel_ms      = min(tgt_vel_ms, curr_vel_ms);
