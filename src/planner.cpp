@@ -219,7 +219,7 @@ vector<vector<double>> Planner::get_spline_points(CarData &cd, vector<vector<dou
     spline_pts_x.push_back(ref_x);
     spline_pts_y.push_back(ref_y);
 
-    int interp_spacing = 40;
+    int interp_spacing = 30;
     // Using tgt_lane for next 3 waypoints
     vector<double> next_interp0 = getXY(SAFE_S_ADD(cd.car_s,interp_spacing),
                                          LANE_CENTER_D(tgt_lane),
@@ -395,7 +395,9 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
                     cout << "Trigerring lane change LEFT..." << endl;
                     plan_state = CHANGE_LEFT;
                 } else {
-                    cout << "Maintaining set speed until safe to trigger lane change LEFT..." << endl;
+                    // Should match the speed of car_ahead
+                    tgt_vel_ms = car_ahead.speed_ms;
+                    cout << "Matching car_ahead speed until safe to trigger lane change LEFT..." << endl;
                 }
             }
             break;
@@ -410,7 +412,9 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
                     cout << "Trigerring lane change RIGHT..." << endl;
                     plan_state = CHANGE_RIGHT;
                 } else {
-                    cout << "Maintaining set speed until safe to trigger lane change RIGHT..." << endl;
+                    // Should match the speed of car_ahead
+                    tgt_vel_ms = car_ahead.speed_ms;
+                    cout << "Matching car_ahead speed until safe to trigger lane change RIGHT..." << endl;
                 }
             }
             break;
