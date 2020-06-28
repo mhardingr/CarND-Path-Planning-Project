@@ -93,7 +93,6 @@ int main() {
                     double car_x = j[1]["x"];
                     double car_y = j[1]["y"];
                     double car_s = j[1]["s"];
-                    //std::cout << "car_s: " << car_s << std::endl;
                     double car_d = j[1]["d"];
                     double car_yaw = j[1]["yaw"];
                     double car_speed = j[1]["speed"];
