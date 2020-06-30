@@ -22,39 +22,32 @@ void CarLane::add_car_to_lane(double next_car_s, double next_car_speed) {
 
 void CarLane::process_nearest_cars() {
     // Sets nearest lead and follow cars
-    bool done           = false;
-    bool found_follow   = lane_cars.size() > 1 ? true : false;
-    bool found_lead     = false;
-    double follow_distance, lead_distance;
-    std::set<LaneCar>::iterator follow_it = lane_cars.end();
-    std::set<LaneCar>::iterator lead_it = lane_cars.begin();
+    bool done         = false;
+    bool found_follow = false;
+    bool found_lead   = false;
+    double next_s;
+
+    LaneCar follow_car, lead_car;
+    std::set<LaneCar>::iterator next_it = lane_cars.begin();
     while (!done) {
-        if (lead_it->curr_s > ego_end_path_s) {
+        next_s = next_it->curr_s;
+        if (SAFE_S_ADD(next_s, (-ego_end_path_s)) < LANE_HORIZON_M) {
             // Found lead car
-            lead_distance = lead_it->curr_s - ego_end_path_s;
-            follow_distance = ego_end_path_s - follow_it->curr_s;
+            lead_car = *next_it;
             found_lead = true;
+        } else if (SAFE_S_ADD(ego_end_path_s, (-next_s)) < LANE_HORIZON_M) {
+            // Found follow car
+            follow_car = *next_it;
+            found_follow = true;
+        }
+        // Loop termination
+        if ((found_lead && found_follow) || next_it == lane_cars.end()) {
             done = true;
-        } else if (lead_it == lane_cars.end()) {
-            // Increment follow_it to lead, set follow_dist and exit loop
-            follow_it = lead_it;
-            follow_distance = ego_end_path_s - follow_it->curr_s;
-            done  = true;
         } else {
-            // At least one
-            follow_it = lead_it;
-            lead_it++;
+            next_it++;
         }
     }
-
-    // Found the nearest cars ahead and behind (filter by horizon distance)
-    LaneCar follow_car, lead_car;
-    if (found_follow && follow_distance < LANE_HORIZON_M) {
-        follow_car = *follow_it;
-    }
-    if (found_lead && lead_distance < LANE_HORIZON_M) {
-        lead_car   = *lead_it;
-    }
+    // Save tuple of (follow_car, lead_car)
     nearest_cars = std::pair<LaneCar,LaneCar>(follow_car, lead_car);
 }
 
@@ -206,7 +199,7 @@ vector<vector<double>> Planner::get_spline_points(CarData &cd, vector<vector<dou
 
     if (fabs(prev_ref_x - ref_x) < EPSILON) {
         double prev_spacing = 2.5;
-        vector<double> prev_interp = getXY(SAFE_S_ADD(cd.car_s,-prev_spacing),
+        vector<double> prev_interp = getXY(SAFE_S_ADD(cd.car_s,(-prev_spacing)),
                                              LANE_CENTER_D(curr_lane),
                                              map_waypoints_s, map_waypoints_x,
                                              map_waypoints_y);
@@ -225,11 +218,11 @@ vector<vector<double>> Planner::get_spline_points(CarData &cd, vector<vector<dou
                                          LANE_CENTER_D(tgt_lane),
                                          map_waypoints_s, map_waypoints_x,
                                          map_waypoints_y);
-    vector<double> next_interp1 = getXY(SAFE_S_ADD(cd.car_s,2*interp_spacing),
+    vector<double> next_interp1 = getXY(SAFE_S_ADD(cd.car_s,(2*interp_spacing)),
                                          LANE_CENTER_D(tgt_lane),
                                          map_waypoints_s, map_waypoints_x,
                                          map_waypoints_y);
-    vector<double> next_interp2 = getXY(SAFE_S_ADD(cd.car_s,3*interp_spacing),
+    vector<double> next_interp2 = getXY(SAFE_S_ADD(cd.car_s,(3*interp_spacing)),
                                          LANE_CENTER_D(tgt_lane),
                                          map_waypoints_s, map_waypoints_x,
                                          map_waypoints_y);
@@ -322,7 +315,7 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
         // Predict car's s-coord at the end of previous trajectory (i.e. rel. to ref_pos)
         // Note: we keep the raw pred_s (no modulo) in order to maintain car order in
         // each lane
-        double pred_s   = det_car_s + (prev_size * det_car_speed * SIM_PD);
+        double pred_s   = SAFE_S_ADD(det_car_s, (prev_size * det_car_speed * SIM_PD));
 
         // Determine if any cars in same lane ahead within the radius
         int det_car_lane    = D_TO_LANE(det_car_d);
