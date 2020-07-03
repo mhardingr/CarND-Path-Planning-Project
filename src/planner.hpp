@@ -7,7 +7,7 @@
 #include "json.hpp"
 
 #define MAX_S 6945.554
-#define SAFE_S_ADD(x,y) (fmod((x)+(y), MAX_S))
+#define SAFE_S_ADD(s1, s2) positive_modulo((s1) + (s2), MAX_S)
 #define SIM_PD 0.02
 #define MPS_TO_MPH 2.237
 #define LANE_WIDTH 4.0
@@ -16,11 +16,11 @@
 #define CAR_LENGTH_M 5.0
 // TODO: tune the factor
 #define LANE_HORIZON_M 25.0
-#define VALID_CAR_GAP_M (CAR_LENGTH_M * 7)
+#define VALID_CAR_GAP_M (CAR_LENGTH_M * 4)
 // TODO is car s the center of the car?
 #define CAR_S_TO_FRONT(s) (SAFE_S_ADD(s, CAR_LENGTH_M/2.0))
 #define CAR_S_TO_REAR(s)  (s - CAR_LENGTH_M/2.0)
-#define LANE_CHANGE_MERGE_BUFFER_M (20.)
+#define LANE_CHANGE_MERGE_BUFFER_M (10.)
 #define LANE_CHANGE_EGO_BUFFER_M (15.0)
 #define PREP_SPEED_STEP ((5.0 / MPS_TO_MPH) * SIM_PD) // 5mph step per SIM_PD
 
@@ -29,9 +29,10 @@
 #define RIGHTMOST_LANE 2
 
 
-
 using nlohmann::json;
 using std::vector;
+
+double positive_modulo(double x, double y);
 
 struct CarData {
     double car_x;

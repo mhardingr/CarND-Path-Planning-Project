@@ -13,6 +13,11 @@ using std::endl;
 
 #define EPSILON 1e-5
 
+double positive_modulo(double x, double y) {
+    double mod = fmod(x,y);
+    return (mod < 0) ? mod + y : mod;
+}
+
 LaneCar::LaneCar() : is_init(false), curr_s(0.0), curr_d(-1.0), speed_ms(-1.0) {};
 LaneCar::LaneCar (double _curr_s, double _curr_d, double _speed_ms) : is_init(true), curr_s(_curr_s), curr_d(_curr_d), speed_ms(_speed_ms) {};
 
@@ -35,11 +40,11 @@ void CarLane::process_nearest_cars() {
         next_car = (*next_it);
         next_s = next_car->curr_s;
         //cout << "Examining cars in CarLane: is_init: " << next_car->is_init << " curr_s: " << next_car->curr_s << " speed_ms: " << next_car->speed_ms << endl;
-        if (!found_lead && SAFE_S_ADD(next_s, (-ego_end_path_s)) < LANE_HORIZON_M) {
+        if (!found_lead && SAFE_S_ADD(next_s, -ego_end_path_s) < LANE_HORIZON_M) {
             // Found lead car
             lead_car = next_car;
             found_lead = true;
-        } else if (!found_follow && SAFE_S_ADD(ego_end_path_s, (-next_s)) < LANE_HORIZON_M) {
+        } else if (!found_follow && SAFE_S_ADD(ego_end_path_s, -next_s) < LANE_HORIZON_M) {
             // Found follow car
             follow_car = next_car;
             found_follow = true;
@@ -51,14 +56,14 @@ void CarLane::process_nearest_cars() {
 }
 
 void CarLane::print_nearest_cars() {
-    std::shared_ptr<LaneCar> follow_car = nearest_cars.first;
-    std::shared_ptr<LaneCar> lead_car = nearest_cars.second;
     if (has_nearest_follow_car()) {
+        std::shared_ptr<LaneCar> follow_car = get_nearest_follow_car();
         cout << "Follow (is_init=" << follow_car->is_init << ", curr_s=" << follow_car->curr_s << ", speed_ms=" << follow_car->speed_ms << endl;
     } else {
         cout << "No follow car." << endl;
     }
     if (has_nearest_lead_car()) {
+        std::shared_ptr<LaneCar> lead_car = get_nearest_lead_car();
         cout << ")\nLead (is_init=" << lead_car->is_init << ", curr_s=" << lead_car->curr_s << ", speed_ms=" << lead_car->speed_ms << ")" << endl;
     } else {
         cout << "No lead car." << endl;
@@ -175,7 +180,7 @@ double CarLane::getMergeSpeed() {
         std::shared_ptr<LaneCar> follow  = get_nearest_follow_car();
         return (lead->speed_ms + follow->speed_ms) / 2.0;
     } else if (!has_lead && has_follow) {
-        std::shared_ptr<LaneCar> follow = get_nearest_lead_car();
+        std::shared_ptr<LaneCar> follow = get_nearest_follow_car();
         return follow->speed_ms;
     } else {
         // No cars!
@@ -353,9 +358,8 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
     // Process the lanes' cars to find the nearest lead and follow cars
     left_lane.process_nearest_cars();
     ego_lane.process_nearest_cars();
-    cout << "Ego end_path_s is: " << cd.end_path_s << endl;
-    ego_lane.print_nearest_cars();
-    cout << endl;
+    // cout << "Ego end_path_s is: " << cd.end_path_s << endl;
+    // ego_lane.print_nearest_cars();
     right_lane.process_nearest_cars();
 
     // Get car ahead
@@ -402,7 +406,11 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
             if (car_ahead_exists && (CAR_S_TO_REAR(car_ahead->curr_s) - CAR_S_TO_FRONT(cd.end_path_s)) < LANE_CHANGE_EGO_BUFFER_M) {
                 tgt_vel_ms -= PREP_SPEED_STEP * (TRAJ_POINTS - prev_size);
                 cout << "(PREP_CL) Slowing down to avoid hitting car ahead. Current speed: " << tgt_vel_ms << endl;
-            } else {
+            } else if (!car_ahead_exists) {
+                // Aborting lane change, car_ahead has switched into another lane
+                cout << "Aborting PREP_CL since car ahead has switched lanes." << endl;
+                plan_state = KEEP_LANE;
+            } else { // No longer within unsafe distance from car ahead
                 if (_is_safe_to_change_lanes(left_lane)) {
                     cout << "Trigerring lane change LEFT..." << endl;
                     plan_state = CHANGE_LEFT;
@@ -419,7 +427,11 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
             if (car_ahead_exists && (CAR_S_TO_REAR(car_ahead->curr_s) - CAR_S_TO_FRONT(cd.end_path_s)) < LANE_CHANGE_EGO_BUFFER_M) {
                 tgt_vel_ms -= PREP_SPEED_STEP * (TRAJ_POINTS - prev_size);
                 cout << "(PREP_CR) Slowing down to avoid hitting car ahead. Current speed: " << tgt_vel_ms << endl;
-            } else {
+            } else if (!car_ahead_exists) {
+                // Aborting lane change, car_ahead has switched into another lane
+                cout << "Aborting PREP_CR since car ahead has switched lanes." << endl;
+                plan_state = KEEP_LANE;
+            } else { // No longer within unsafe distance from car ahead
                 if (_is_safe_to_change_lanes(right_lane)) {
                     cout << "Trigerring lane change RIGHT..." << endl;
                     plan_state = CHANGE_RIGHT;
