@@ -57,13 +57,8 @@ class LaneCar{
         double curr_s;
         double curr_d;
         double speed_ms;
-        LaneCar () {
-            is_init =false;
-            curr_s  =0.0;
-            curr_d  =-1.0;
-            speed_ms=0.0;
-        }
-        LaneCar (double _curr_s, double _curr_d, double _speed_ms) : is_init(true), curr_s(_curr_s), curr_d(_curr_d), speed_ms(_speed_ms) {};
+        LaneCar ();
+        LaneCar (double _curr_s, double _curr_d, double _speed_ms);
         ~LaneCar () = default;
 
         inline bool operator< (const LaneCar rhs) const { return is_init && curr_s < rhs.curr_s; }
@@ -79,27 +74,28 @@ struct LaneGap{
 class CarLane {
     public:
         CarLane(double _ego_end_path_s, double _lane_d);
-        ~CarLane() {};
+        ~CarLane() = default;
         void add_car_to_lane(double next_car_s, double next_car_speed);
         bool has_nearest_lead_car();
         bool has_nearest_follow_car();
-        LaneCar get_nearest_lead_car();
-        LaneCar get_nearest_follow_car();
+        std::shared_ptr<LaneCar> get_nearest_lead_car();
+        std::shared_ptr<LaneCar> get_nearest_follow_car();
         void process_nearest_cars();
         bool canMerge();
         bool canMergeFasterThan(double thresh_speed_ms);
         double getMergeSpeed();
         void print_nearest_cars();
-        static bool isValidGap(const LaneCar &lead_car, const LaneCar &follow_car) {
-            return (CAR_S_TO_REAR(lead_car.curr_s) - CAR_S_TO_FRONT(follow_car.curr_s)
+        static bool isValidGap(const std::shared_ptr<LaneCar> lead_car, const std::shared_ptr<LaneCar> follow_car) {
+            // Assumes both lead and follow cars are valid
+            return (CAR_S_TO_REAR(lead_car->curr_s) - CAR_S_TO_FRONT(follow_car->curr_s)
                     > VALID_CAR_GAP_M);
         }
-        static bool isFasterThan(const LaneCar &lead_car, const LaneCar &follow_car, double thresh_speed_ms) {
-            return ((lead_car.speed_ms + follow_car.speed_ms) / 2.0 > thresh_speed_ms);
+        static bool isFasterThan(const std::shared_ptr<LaneCar> lead_car, const std::shared_ptr<LaneCar> follow_car, double thresh_speed_ms) {
+            return ((lead_car->speed_ms + follow_car->speed_ms) / 2.0 > thresh_speed_ms);
         }
     private:
-        std::set<LaneCar> lane_cars; // Ordered set of cars
-        std::pair<LaneCar, LaneCar> nearest_cars;   // first-> follow, second->lead
+        std::set<std::shared_ptr<LaneCar>> lane_cars; // Ordered set of cars
+        std::pair<std::shared_ptr<LaneCar>, std::shared_ptr<LaneCar>> nearest_cars;   // first-> follow, second->lead
         double ego_end_path_s;
         double lane_d;
 };
