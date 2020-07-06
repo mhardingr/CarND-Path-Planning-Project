@@ -231,7 +231,7 @@ vector<vector<double>> Planner::get_spline_points(CarData &cd, vector<vector<dou
     spline_pts_x.push_back(ref_x);
     spline_pts_y.push_back(ref_y);
 
-    int interp_spacing = 30;
+    int interp_spacing = 40;
     // Using tgt_lane for next 3 waypoints
     vector<double> next_interp0 = getXY(SAFE_S_ADD(cd.car_s,interp_spacing),
                                          LANE_CENTER_D(tgt_lane),
@@ -539,9 +539,9 @@ vector<vector<double>> Planner::get_next_pos_vals(CarData &cd) {
         double delta_vel;
         if (lane_change_trigerred) {
             // Lane change long. acceleration should be cut down
-            delta_vel = SIM_PD * 0.5 * SAFE_ACC_INC;
+            delta_vel = SIM_PD * 0.3 * MAX_SAFE_ACC_INC;
         } else {
-            delta_vel = SIM_PD * SAFE_ACC_INC;
+            delta_vel = SIM_PD * MAX_SAFE_ACC_INC;
         }
         if (curr_vel_ms < tgt_vel_ms) {
             curr_vel_ms     += delta_vel;

@@ -107,7 +107,7 @@ class Planner {
     public :
         static const int TRAJ_POINTS             = 50;
         static constexpr double MAX_VEL_MS       = 49.5 / MPS_TO_MPH; // m/s
-        static constexpr double SAFE_ACC_INC     = 9.5;  // m/s2
+        static constexpr double MAX_SAFE_ACC_INC = 9.5;  // m/s2
         static constexpr double SAFE_DISTANCE_M  = 40.0; // m
         Planner(vector<vector<double>> map_waypoints_info);
         ~Planner() {}
