@@ -14,10 +14,8 @@
 #define LANE_CENTER_D(lane) ((lane)*LANE_WIDTH + 0.5*LANE_WIDTH)
 #define D_TO_LANE(d) ((int)floor(d / LANE_WIDTH))
 #define CAR_LENGTH_M 5.0
-// TODO: tune the factor
 #define LANE_HORIZON_M 25.0
 #define VALID_CAR_GAP_M (CAR_LENGTH_M * 4)
-// TODO is car s the center of the car?
 #define CAR_S_TO_FRONT(s) (SAFE_S_ADD(s, CAR_LENGTH_M/2.0))
 #define CAR_S_TO_REAR(s)  (s - CAR_LENGTH_M/2.0)
 #define LANE_CHANGE_MERGE_BUFFER_M (10.)
@@ -95,8 +93,8 @@ class CarLane {
             return ((lead_car->speed_ms + follow_car->speed_ms) / 2.0 > thresh_speed_ms);
         }
     private:
-        std::set<std::shared_ptr<LaneCar>> lane_cars; // Ordered set of cars
-        std::pair<std::shared_ptr<LaneCar>, std::shared_ptr<LaneCar>> nearest_cars;   // first-> follow, second->lead
+        std::set<std::shared_ptr<LaneCar>> lane_cars;                               // Ordered set of cars
+        std::pair<std::shared_ptr<LaneCar>, std::shared_ptr<LaneCar>> nearest_cars; // first-> follow, second->lead
         double ego_end_path_s;
         double lane_d;
 };
@@ -106,9 +104,9 @@ enum PlannerState {KEEP_LANE=0, PREP_CL=1, PREP_CR=2, CHANGE_LEFT=3, CHANGE_RIGH
 class Planner {
     public :
         static const int TRAJ_POINTS             = 50;
-        static constexpr double MAX_VEL_MS       = 49.5 / MPS_TO_MPH; // m/s
-        static constexpr double MAX_SAFE_ACC_INC = 9.5;  // m/s2
-        static constexpr double SAFE_DISTANCE_M  = 40.0; // m
+        static constexpr double MAX_VEL_MS       = 49.5 / MPS_TO_MPH;  // m/s
+        static constexpr double MAX_SAFE_ACC_INC = 9.5;                // m/s2
+        static constexpr double SAFE_DISTANCE_M  = 40.0;               // m
         Planner(vector<vector<double>> map_waypoints_info);
         ~Planner() {}
 
@@ -134,4 +132,3 @@ class Planner {
         double tgt_vel_ms;
 };
 #endif  // PLANNER_H
-

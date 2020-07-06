@@ -39,7 +39,6 @@ void CarLane::process_nearest_cars() {
     while (!(found_follow && found_lead) && next_it != lane_cars.end() ) {
         next_car = (*next_it);
         next_s = next_car->curr_s;
-        //cout << "Examining cars in CarLane: is_init: " << next_car->is_init << " curr_s: " << next_car->curr_s << " speed_ms: " << next_car->speed_ms << endl;
         if (!found_lead && SAFE_S_ADD(next_s, -ego_end_path_s) < LANE_HORIZON_M) {
             // Found lead car
             lead_car = next_car;
@@ -99,32 +98,24 @@ bool CarLane::canMerge() {
     bool has_lead = has_nearest_lead_car();
     bool has_follow = has_nearest_follow_car();
     if (has_lead && !has_follow) {
-//        cout << "(canMerge) Lane (" << D_TO_LANE(lane_d) << " has only lead car." << endl;
         double lead_s = get_nearest_lead_car()->curr_s;
         if ((CAR_S_TO_REAR(lead_s) - CAR_S_TO_FRONT(ego_end_path_s)) > LANE_CHANGE_MERGE_BUFFER_M) {
-//            cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
             return true;
         }
     } else if (has_lead && has_follow) {
         // Gap exists to left, is it fast enough and large enough?
-//        cout << "(canMerge) Lane (" << D_TO_LANE(lane_d) << " has lead and follow." << endl;
         std::shared_ptr<LaneCar> lead    = get_nearest_lead_car();
         std::shared_ptr<LaneCar> follow  = get_nearest_follow_car();
         if (CarLane::isValidGap(lead, follow)) {
-//            cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
             return true;
         }
     } else if (!has_lead && has_follow) {
-//        cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has only follow." << endl;
         double follow_s = get_nearest_follow_car()->curr_s;
         if ((CAR_S_TO_REAR(ego_end_path_s) - CAR_S_TO_FRONT(follow_s)) > LANE_CHANGE_MERGE_BUFFER_M) {
-//            cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
             return true;
         }
     } else {
         // No cars!
-//        cout << "(canMerge) Lane (" << D_TO_LANE(lane_d) << " is empty!" << endl;
-//        cout << "\t(canMerge) Lane (" << D_TO_LANE(lane_d) << " has room!" << endl;
         return true;
     }
     return false;
@@ -318,10 +309,8 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
     // Also find all viable gaps to fit into in left and right lanes
     vector<vector<double>> sensor_fusion= cd.sensor_fusion;
     int ego_lane_i  = D_TO_LANE(cd.car_d);
-    double left_lane_d = LANE_CENTER_D(ego_lane_i - 1);// TODO
+    double left_lane_d = LANE_CENTER_D(ego_lane_i - 1);
     double right_lane_d = LANE_CENTER_D(ego_lane_i + 1);
-//    cout << "ego_lane_i:" << ego_lane_i << endl;
-//    cout << "ego_lane_d " << cd.car_d << "\tleft_d:"<<left_lane_d << "\tright_d:"<<right_lane_d <<endl;
     CarLane left_lane {cd.end_path_s, left_lane_d};
     CarLane ego_lane  {cd.end_path_s, LANE_CENTER_D(ego_lane_i)};
     CarLane right_lane{cd.end_path_s, right_lane_d};
@@ -342,7 +331,6 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
         int car_lane        = D_TO_LANE(cd.car_d);
         if (det_car_lane == car_lane) {
             // Add car to ego lane
-            // cout << "Adding car to ego lane: curr_s=" << pred_s << " speed_ms=" << det_car_speed << endl;
             ego_lane.add_car_to_lane(pred_s, det_car_speed);
         } else if (det_car_lane >= LEFTMOST_LANE && det_car_lane < car_lane) {
             // Other car is to our left in our way of traffic
@@ -358,8 +346,6 @@ void Planner::avoid_traffic(CarData &cd, vector<double>ref_pos) {
     // Process the lanes' cars to find the nearest lead and follow cars
     left_lane.process_nearest_cars();
     ego_lane.process_nearest_cars();
-    // cout << "Ego end_path_s is: " << cd.end_path_s << endl;
-    // ego_lane.print_nearest_cars();
     right_lane.process_nearest_cars();
 
     // Get car ahead
@@ -495,7 +481,6 @@ vector<vector<double>> Planner::get_next_pos_vals(CarData &cd) {
     // Trajectory preparation
 
     // Prepare a reference position: i.e. car's last position in last trajectory
-//    cout << "previous path has size: " << cd.previous_path_x.size() << endl;
     vector<vector<double>> ref_vec  = get_ref_vec(cd);
     vector<double> prev_ref_pos     = ref_vec[0];
     vector<double> ref_pos          = ref_vec[1];
@@ -575,6 +560,5 @@ vector<vector<double>> Planner::get_next_pos_vals(CarData &cd) {
         next_x_vals.push_back(x_w);
         next_y_vals.push_back(y_w);
     }
-//    cout << "curr lane" << curr_lane << "\tplan_state: " << plan_state << endl;
     return {next_x_vals, next_y_vals};
 }
