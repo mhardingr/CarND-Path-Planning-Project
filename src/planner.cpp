@@ -97,9 +97,12 @@ bool CarLane::canMerge() {
 
     bool has_lead = has_nearest_lead_car();
     bool has_follow = has_nearest_follow_car();
+    double distance = 0.;
     if (has_lead && !has_follow) {
         double lead_s = get_nearest_lead_car()->curr_s;
-        if ((CAR_S_TO_REAR(lead_s) - CAR_S_TO_FRONT(ego_end_path_s)) > LANE_CHANGE_MERGE_BUFFER_M) {
+        distance = fabs(CAR_S_TO_REAR(lead_s)-CAR_S_TO_FRONT(ego_end_path_s));
+        if (distance > LANE_CHANGE_MERGE_BUFFER_M) {
+            cout << "canMerge: Yes. Lead car has distance: " << distance << endl;
             return true;
         }
     } else if (has_lead && has_follow) {
@@ -107,15 +110,19 @@ bool CarLane::canMerge() {
         std::shared_ptr<LaneCar> lead    = get_nearest_lead_car();
         std::shared_ptr<LaneCar> follow  = get_nearest_follow_car();
         if (CarLane::isValidGap(lead, follow)) {
+            cout << "canMerge: Yes. isValidGap returns true" << distance << endl;
             return true;
         }
     } else if (!has_lead && has_follow) {
         double follow_s = get_nearest_follow_car()->curr_s;
-        if ((CAR_S_TO_REAR(ego_end_path_s) - CAR_S_TO_FRONT(follow_s)) > LANE_CHANGE_MERGE_BUFFER_M) {
+        distance = fabs(CAR_S_TO_REAR(ego_end_path_s)-CAR_S_TO_FRONT(follow_s));
+        if (distance > LANE_CHANGE_MERGE_BUFFER_M) {
+            cout << "canMerge: Yes. Follow car has distance: " << distance << endl;
             return true;
         }
     } else {
         // No cars!
+        cout << "canMerge: Yes. No cars in other lane." << endl;
         return true;
     }
     return false;

@@ -95,3 +95,16 @@ In cases where the ego-car is changing lanes, this incremental acceleration cons
 value is greatly discounted (i.e. the car accelerates 3x's slower when changing lanes)
 in order to account for the contribution of lateral acceleration to the car's total
 acceleration.
+
+Lane changing conditions:
+Lane changes only occur after the ego-car has approached a car in its lane from the rear
+within a threshold distance and the other car is slower than the speed limit.
+Once this occurs, a target lane is decided to be that lane with the fastest
+traffic speed (which is the speed limit if the lane is "empty") - if both left and
+right lanes have the same traffic speed, there is a bias towards the left lane.
+Once a target lane is decided, the Planner state-machine enters the lane-change 
+preparation state for direction of the lane change: i.e. PREP_CL for left lane
+or PREP_CR for right lane. In the preparation state, the ego-car will slow down
+as mentioned above to maintain a safe distance from the car ahead in its lane 
+while it waits for an opening in the target lane. The conditions for an "opening"
+are defined in the "CHANGE_*" macro-states description above.

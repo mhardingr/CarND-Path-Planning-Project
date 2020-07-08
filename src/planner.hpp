@@ -15,10 +15,10 @@
 #define D_TO_LANE(d) ((int)floor(d / LANE_WIDTH))
 #define CAR_LENGTH_M 5.0
 #define LANE_HORIZON_M 25.0
-#define VALID_CAR_GAP_M (CAR_LENGTH_M * 4)
+#define VALID_CAR_GAP_M (CAR_LENGTH_M * 5.)
 #define CAR_S_TO_FRONT(s) (SAFE_S_ADD(s, CAR_LENGTH_M/2.0))
 #define CAR_S_TO_REAR(s)  (s - CAR_LENGTH_M/2.0)
-#define LANE_CHANGE_MERGE_BUFFER_M (10.)
+#define LANE_CHANGE_MERGE_BUFFER_M (20.)
 #define LANE_CHANGE_EGO_BUFFER_M (15.0)
 #define PREP_SPEED_STEP ((5.0 / MPS_TO_MPH) * SIM_PD) // 5mph step per SIM_PD
 
@@ -86,7 +86,7 @@ class CarLane {
         void print_nearest_cars();
         static bool isValidGap(const std::shared_ptr<LaneCar> lead_car, const std::shared_ptr<LaneCar> follow_car) {
             // Assumes both lead and follow cars are valid
-            return (CAR_S_TO_REAR(lead_car->curr_s) - CAR_S_TO_FRONT(follow_car->curr_s)
+            return (fabs(CAR_S_TO_REAR(lead_car->curr_s)-CAR_S_TO_FRONT(follow_car->curr_s))
                     > VALID_CAR_GAP_M);
         }
         static bool isFasterThan(const std::shared_ptr<LaneCar> lead_car, const std::shared_ptr<LaneCar> follow_car, double thresh_speed_ms) {
